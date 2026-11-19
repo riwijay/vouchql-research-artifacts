@@ -952,7 +952,7 @@ cache_pairs:
     notes: "'ended contract' = end_maintenance < CURRENT_DATE via glossary."
 
 # ============================================================
-# ABLATION SUBSET — 25 ids, one or more per repair pass
+# ABLATION SUBSET — 26 entries, 24 unique IDs, one or more per repair pass
 # ============================================================
 
 ablation_subset:
