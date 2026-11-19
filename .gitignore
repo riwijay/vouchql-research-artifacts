@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.old
+*~
+
+# Local databases and data
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Model weights and binaries
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+
+# Archives and deployment bundles
+*.tar
+*.tar.gz
+*.zip
