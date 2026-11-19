@@ -1,0 +1,999 @@
+# Vouch evaluation question set.
+#
+# Structure:
+#   questions:           healthy tables (>=100 rows) — used for execution accuracy
+#   thin_questions:      1–99 rows — execution accuracy reported separately
+#   vacuous_questions:   empty or non-discriminating tables — structural validity only
+#   cache_pairs:         canonical variance pairs — normalizer/cache test, not accuracy
+#   ablation_subset:     ids used for per-repair-pass ablation (26 entries, 24 unique IDs)
+#
+# Scoring:
+#   exec_accuracy        : exact row-set match vs golden_sql, on questions + thin_questions
+#   structural_validity  : result.ok == True and result.sql executes, on ALL sets
+#   wrong_but_silent     : wrong AND plan not surfaced; computed on questions + thin only
+#   wrong_but_visible    : wrong AND plan surfaced;     computed on questions + thin only
+#
+# `# REVIEW:` flags mark canonical questions whose intended semantics I inferred;
+# eyeball these before running the harness.
+
+meta:
+  version: 1
+  total_questions: 100          # questions + thin + vacuous
+  healthy: 65
+  thin: 10
+  vacuous: 25
+  cache_pairs: 12
+  ablation_subset: 26
+
+# ============================================================
+# HEALTHY — tables with >=100 rows and meaningful result spread
+# ============================================================
+
+questions:
+
+  # ---------- counts ----------
+  - id: q001
+    q: how many devices are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q002
+    q: how many devices are in each site
+    expected_intent: group_count
+    golden_sql: "SELECT site AS site, COUNT(*) AS count FROM devices WHERE site IS NOT NULL AND site != '' GROUP BY site"
+    order_sensitive: false
+    source: canonical
+    notes: "Excludes NULL/empty site to match the question's plain reading."
+
+  - id: q003
+    q: how many devices are involved in a project
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices WHERE project_id IS NOT NULL"
+    order_sensitive: false
+    source: canonical
+    notes: "# REVIEW: 'involved in a project' = project_id NOT NULL."
+
+  - id: q004
+    q: how many devices belong to each vendor
+    expected_intent: group_count
+    golden_sql: "SELECT v.name AS name, COUNT(d.id) AS count FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id GROUP BY v.name"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q005
+    q: how many devices belong to each product family
+    expected_intent: group_count
+    golden_sql: "SELECT product_family AS product_family, COUNT(*) AS count FROM devices WHERE product_family IS NOT NULL AND product_family != '' GROUP BY product_family"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q006
+    q: how many devices belong to vendor_alpha
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE LOWER(v.name) = 'vendor_alpha'"
+    order_sensitive: false
+    source: canonical
+    notes: "Discriminating: 1 vendor row matches."
+
+  - id: q007
+    q: how many sites are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM sites"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q008
+    q: how many projects are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM projects"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q009
+    q: show me how many devices used in each project
+    expected_intent: group_count
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, COUNT(d.id) AS count FROM projects p JOIN devices d ON d.project_id = p.id GROUP BY p.nama_kontrak"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q010
+    q: how many devices have an owner recorded
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices WHERE owner IS NOT NULL AND owner != ''"
+    order_sensitive: false
+    source: authored
+    notes: "3600 devices have an owner."
+
+  - id: q011
+    q: how many distinct sites do devices appear in
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT site) AS count FROM devices WHERE site IS NOT NULL AND site != ''"
+    order_sensitive: false
+    source: authored
+    notes: "64 distinct sites."
+
+  - id: q012
+    q: how many devices are in each device function
+    expected_intent: group_count
+    golden_sql: "SELECT function AS function, COUNT(*) AS count FROM devices WHERE function IS NOT NULL AND function != '' GROUP BY function"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q013
+    q: how many devices are in each technology
+    expected_intent: group_count
+    golden_sql: "SELECT technology AS technology, COUNT(*) AS count FROM devices WHERE technology IS NOT NULL AND technology != '' GROUP BY technology"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  # ---------- compliance scores ----------
+  - id: q014
+    q: what are the top 5 devices with the highest os compliance score
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, c.os_compliance_score AS os_compliance_score FROM devices d JOIN compliance_scores c ON d.id = c.device_id ORDER BY c.os_compliance_score DESC, d.hostname ASC LIMIT 5"
+    order_sensitive: true
+    source: canonical
+    notes: "Tie-break by hostname for determinism."
+
+  - id: q015
+    q: show me the top 10 devices by compliance score
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, c.os_compliance_score AS os_compliance_score FROM devices d JOIN compliance_scores c ON d.id = c.device_id ORDER BY c.os_compliance_score DESC, d.hostname ASC LIMIT 10"
+    order_sensitive: true
+    source: canonical
+    notes: ""
+
+  - id: q016
+    q: how many devices have an os compliance score above 90
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM compliance_scores WHERE os_compliance_score > 90"
+    order_sensitive: false
+    source: authored
+    notes: "2544 rows."
+
+  - id: q017
+    q: how many devices have an os compliance score above 70
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM compliance_scores WHERE os_compliance_score > 70"
+    order_sensitive: false
+    source: authored
+    notes: "3203 rows."
+
+  - id: q018
+    q: how many devices have an os compliance score below 50
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM compliance_scores WHERE os_compliance_score < 50"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q019
+    q: what is the average os compliance score
+    expected_intent: aggregate
+    golden_sql: "SELECT AVG(os_compliance_score) AS avg FROM compliance_scores"
+    order_sensitive: false
+    source: authored
+    notes: "Float comparison — the harness uses tolerance for aggregate results."
+
+  - id: q020
+    q: what is the maximum os compliance score
+    expected_intent: aggregate
+    golden_sql: "SELECT MAX(os_compliance_score) AS max FROM compliance_scores"
+    order_sensitive: false
+    source: authored
+    notes: "Max = 100."
+
+  - id: q021
+    q: how many devices have an os compliance status of compliant
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM compliance_scores WHERE LOWER(os_compliance_status) = 'compliant'"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: assumes status label 'compliant' exists; if not, this is 0 and should be vacuous."
+
+  - id: q022
+    q: show the average os compliance score per product family
+    expected_intent: group_count
+    golden_sql: "SELECT d.product_family AS product_family, AVG(c.os_compliance_score) AS avg FROM devices d JOIN compliance_scores c ON d.id = c.device_id WHERE d.product_family IS NOT NULL AND d.product_family != '' GROUP BY d.product_family"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q023
+    q: how many devices in each site have an os compliance score above 90
+    expected_intent: group_count
+    golden_sql: "SELECT d.site AS site, COUNT(*) AS count FROM devices d JOIN compliance_scores c ON d.id = c.device_id WHERE d.site IS NOT NULL AND d.site != '' AND c.os_compliance_score > 90 GROUP BY d.site"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  # ---------- projects / contracts / temporal ----------
+  - id: q024
+    q: list project contract that has ended
+    expected_intent: list
+    golden_sql: "SELECT p.id AS id, p.kp AS kp, p.no_kontrak AS no_kontrak FROM projects p WHERE p.end_maintenance < CURRENT_DATE"
+    order_sensitive: false
+    source: canonical
+    notes: "37 projects."
+
+  - id: q025
+    q: which devices have contracts that have ended
+    expected_intent: list
+    golden_sql: "SELECT d.id AS id, d.hostname AS hostname, d.sn AS sn FROM devices d JOIN projects p ON d.project_id = p.id WHERE p.end_maintenance < CURRENT_DATE"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q026
+    q: how many projects have ended
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM projects WHERE end_maintenance < CURRENT_DATE"
+    order_sensitive: false
+    source: authored
+    notes: "37."
+
+  - id: q027
+    q: how many projects end in 2026
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM projects WHERE strftime('%Y', end_maintenance) = '2026'"
+    order_sensitive: false
+    source: authored
+    notes: "27."
+
+  - id: q028
+    q: how many projects end in 2025
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM projects WHERE strftime('%Y', end_maintenance) = '2025'"
+    order_sensitive: false
+    source: authored
+    notes: "15."
+
+  - id: q029
+    q: list devices in each contract that end-of-maintenance has expired in april through september 2026. show contract name, end maintenance, sn, pn
+    expected_intent: list
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, p.end_maintenance AS end_maintenance, d.sn AS sn, d.pn AS pn FROM devices d JOIN projects p ON d.project_id = p.id WHERE strftime('%m', p.end_maintenance) IN ('04','05','06','07','08','09') AND strftime('%Y', p.end_maintenance) = '2026'"
+    order_sensitive: false
+    source: canonical
+    notes: "15 projects."
+
+  - id: q030
+    q: list devices whose contracts have ended between january and march. show pn, end maintenance
+    expected_intent: list
+    golden_sql: "SELECT d.pn AS pn, p.end_maintenance AS end_maintenance FROM devices d JOIN projects p ON d.project_id = p.id WHERE strftime('%m', p.end_maintenance) IN ('01','02','03')"
+    order_sensitive: false
+    source: canonical
+    notes: "20 projects match Jan–Mar across all years."
+
+  - id: q031
+    q: list devices whose contracts have ended. show only product family, pn, end maintenance
+    expected_intent: list
+    golden_sql: "SELECT d.product_family AS product_family, d.pn AS pn, p.end_maintenance AS end_maintenance FROM devices d JOIN projects p ON d.project_id = p.id WHERE p.end_maintenance < CURRENT_DATE"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q032
+    q: list devices whose contracts have ended, ordered by end_maintenance descending, showing only product family, pn, end maintenance, vendor name
+    expected_intent: list
+    golden_sql: "SELECT d.product_family AS product_family, d.pn AS pn, p.end_maintenance AS end_maintenance, v.name AS name FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE p.end_maintenance < CURRENT_DATE ORDER BY p.end_maintenance DESC"
+    order_sensitive: true
+    source: canonical
+    notes: ""
+
+  - id: q033
+    q: list devices whose contracts have ended, ordered by end_maintenance ascending, showing only product family, pn, end maintenance, vendor name
+    expected_intent: list
+    golden_sql: "SELECT d.product_family AS product_family, d.pn AS pn, p.end_maintenance AS end_maintenance, v.name AS name FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE p.end_maintenance < CURRENT_DATE ORDER BY p.end_maintenance ASC"
+    order_sensitive: true
+    source: canonical
+    notes: ""
+
+  - id: q034
+    q: count sn per pn in each contract that end-of-maintenance has expired in april through september 2026, show contract name, end maintenance, pn, and total count of sn
+    expected_intent: group_count
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, p.end_maintenance AS end_maintenance, d.pn AS pn, COUNT(d.sn) AS count FROM devices d JOIN projects p ON d.project_id = p.id WHERE strftime('%m', p.end_maintenance) IN ('04','05','06','07','08','09') AND strftime('%Y', p.end_maintenance) = '2026' GROUP BY p.nama_kontrak, p.end_maintenance, d.pn"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: q035
+    q: how many devices per project
+    expected_intent: group_count
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, COUNT(d.id) AS count FROM projects p JOIN devices d ON d.project_id = p.id GROUP BY p.nama_kontrak"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q036
+    q: how many devices belong to each contract that has ended
+    expected_intent: group_count
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, COUNT(d.id) AS count FROM projects p JOIN devices d ON d.project_id = p.id WHERE p.end_maintenance < CURRENT_DATE GROUP BY p.nama_kontrak"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  # ---------- devices / listing ----------
+  - id: q037
+    q: list the first 5 devices
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn FROM devices d ORDER BY d.id ASC LIMIT 5"
+    order_sensitive: true
+    source: canonical
+    notes: "Pass-6 LIMIT inference test."
+
+  - id: q038
+    q: list vendors
+    expected_intent: list
+    golden_sql: "SELECT v.name AS name FROM vendors v"
+    order_sensitive: false
+    source: canonical
+    notes: "5 rows."
+
+  - id: q039
+    q: show first 10 devices belong to vendor_beta, show only pn, product family, and vendor
+    expected_intent: list
+    golden_sql: "SELECT d.pn AS pn, d.product_family AS product_family, v.name AS name FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE LOWER(v.name) = 'vendor_beta' ORDER BY d.id ASC LIMIT 10"
+    order_sensitive: true
+    source: canonical
+    notes: "explicit_select + LIMIT."
+
+  - id: q040
+    q: show all information for device with sn SYNTHSN000001
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn, d.pn AS pn, d.product_family AS product_family, d.ip_address AS ip_address, d.site AS site, d.function AS function, d.technology AS technology, p.nama_kontrak AS nama_kontrak, p.end_maintenance AS end_maintenance, v.name AS name FROM devices d LEFT JOIN projects p ON d.project_id = p.id LEFT JOIN vendors v ON p.vendor_id = v.id WHERE d.sn = 'SYNTHSN000001'"
+    order_sensitive: false
+    source: canonical
+    notes: "Pass-11 profile expansion + pass-12 key-value anchor."
+
+  - id: q041
+    q: list the first 5 devices belong to vendor_alpha
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE LOWER(v.name) = 'vendor_alpha' ORDER BY d.id ASC LIMIT 5"
+    order_sensitive: true
+    source: canonical
+    notes: ""
+
+  - id: q042
+    q: list devices in site site_alpha
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn FROM devices d WHERE LOWER(d.site) = 'site_alpha'"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: site name 'site_alpha' assumed present; if 0, move to vacuous."
+
+  - id: q043
+    q: how many devices are at each site in each project
+    expected_intent: group_count
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, d.site AS site, COUNT(d.id) AS count FROM devices d JOIN projects p ON d.project_id = p.id WHERE d.site IS NOT NULL AND d.site != '' GROUP BY p.nama_kontrak, d.site"
+    order_sensitive: false
+    source: authored
+    notes: "Multi-dim group."
+
+  - id: q044
+    q: list the top 10 devices by os compliance score in each site
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.site AS site, c.os_compliance_score AS os_compliance_score FROM devices d JOIN compliance_scores c ON d.id = c.device_id WHERE d.site IS NOT NULL AND d.site != '' ORDER BY c.os_compliance_score DESC, d.hostname ASC, d.site ASC LIMIT 10"
+    order_sensitive: true
+    source: authored
+    notes: "Global top-10 restricted to devices with a site."
+
+  # ---------- os / firmware ----------
+  - id: q045
+    q: how many distinct os types are recorded
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT os_type) AS count FROM os_existing WHERE os_type IS NOT NULL AND os_type != ''"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q046
+    q: how many devices run each os type
+    expected_intent: group_count
+    golden_sql: "SELECT o.os_type AS os_type, COUNT(*) AS count FROM os_existing o WHERE o.os_type IS NOT NULL AND o.os_type != '' GROUP BY o.os_type"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q047
+    q: how many distinct firmware versions are recorded in hardware inventory
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT firmware_version) AS count FROM device_hardware_inventory WHERE firmware_version IS NOT NULL AND firmware_version != ''"
+    order_sensitive: false
+    source: authored
+    notes: "4508 rows with firmware."
+
+  - id: q048
+    q: how many hardware components are recorded per component type
+    expected_intent: group_count
+    golden_sql: "SELECT component_type AS component_type, COUNT(*) AS count FROM device_hardware_inventory WHERE component_type IS NOT NULL AND component_type != '' GROUP BY component_type"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q049
+    q: how many devices have a firmware version recorded
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT device_id) AS count FROM device_hardware_inventory WHERE firmware_version IS NOT NULL AND firmware_version != ''"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q050
+    q: how many os lifecycle records are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM os_lifecycle"
+    order_sensitive: false
+    source: authored
+    notes: "53 rows."
+
+  - id: q051
+    q: how many product numbers have a last-day-of-support date
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM product_numbers WHERE ldos_date IS NOT NULL"
+    order_sensitive: false
+    source: authored
+    notes: "85 product numbers."
+
+  # ---------- misc / structural tests ----------
+  - id: q052
+    q: how many distinct owners do devices have
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT owner) AS count FROM devices WHERE owner IS NOT NULL AND owner != ''"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q053
+    q: how many devices are assigned to each owner
+    expected_intent: group_count
+    golden_sql: "SELECT owner AS owner, COUNT(*) AS count FROM devices WHERE owner IS NOT NULL AND owner != '' GROUP BY owner"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q054
+    q: how many devices belong to each vendor and each product family
+    expected_intent: group_count
+    golden_sql: "SELECT v.name AS name, d.product_family AS product_family, COUNT(d.id) AS count FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE d.product_family IS NOT NULL AND d.product_family != '' GROUP BY v.name, d.product_family"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q055
+    q: how many engineers are assigned to each project
+    expected_intent: group_count
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, COUNT(pe.engineer_id) AS count FROM projects p JOIN project_engineers pe ON p.id = pe.project_id GROUP BY p.nama_kontrak"
+    order_sensitive: false
+    source: authored
+    notes: "61 engineer rows, 124 projects."
+
+  - id: q056
+    q: how many distinct product families are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT name) AS count FROM product_families"
+    order_sensitive: false
+    source: authored
+    notes: "37 families."
+
+  - id: q057
+    q: how many devices have a product family that appears in product families
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices d WHERE d.product_family IS NOT NULL AND LOWER(d.product_family) IN (SELECT LOWER(name) FROM product_families)"
+    order_sensitive: false
+    source: authored
+    notes: "Semantic-join coverage test."
+
+  - id: q058
+    q: how many devices are in each function and each technology
+    expected_intent: group_count
+    golden_sql: "SELECT function AS function, technology AS technology, COUNT(*) AS count FROM devices WHERE function IS NOT NULL AND function != '' AND technology IS NOT NULL AND technology != '' GROUP BY function, technology"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q059
+    q: list devices ordered by hostname ascending, showing hostname and sn
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn FROM devices d ORDER BY d.hostname ASC"
+    order_sensitive: true
+    source: authored
+    notes: "Full list; truncated to MAX_ROWS by pipeline."
+
+  - id: q060
+    q: how many devices have a recorded ip address
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices WHERE ip_address IS NOT NULL AND ip_address != ''"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q061
+    q: what is the average compliance score per site
+    expected_intent: group_count
+    golden_sql: "SELECT d.site AS site, AVG(c.os_compliance_score) AS avg FROM devices d JOIN compliance_scores c ON d.id = c.device_id WHERE d.site IS NOT NULL AND d.site != '' GROUP BY d.site"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q062
+    q: how many devices per vendor in each site
+    expected_intent: group_count
+    golden_sql: "SELECT v.name AS name, d.site AS site, COUNT(d.id) AS count FROM devices d JOIN projects p ON d.project_id = p.id JOIN vendors v ON p.vendor_id = v.id WHERE d.site IS NOT NULL AND d.site != '' GROUP BY v.name, d.site"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q063
+    q: how many hardware components are in each operational status
+    expected_intent: group_count
+    golden_sql: "SELECT oper_status AS oper_status, COUNT(*) AS count FROM device_hardware_inventory WHERE oper_status IS NOT NULL AND oper_status != '' GROUP BY oper_status"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+  - id: q064
+    q: how many devices have a warranty record
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT device_id) AS count FROM device_warranties"
+    order_sensitive: false
+    source: authored
+    notes: "315 warranty rows; count of distinct devices."
+
+  - id: q065
+    q: how many distinct project tags are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT tag) AS count FROM projects WHERE tag IS NOT NULL AND tag != ''"
+    order_sensitive: false
+    source: authored
+    notes: ""
+
+# ============================================================
+# THIN — 1–99 rows; execution accuracy reported separately
+# ============================================================
+
+thin_questions:
+
+  - id: t001
+    q: how many devices have an existing os version that is past its end-of-life date
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM os_existing WHERE end_of_life_date IS NOT NULL AND end_of_life_date < CURRENT_DATE"
+    order_sensitive: false
+    source: canonical
+    notes: "7 rows."
+
+  - id: t002
+    q: give me some devices which existing os version has EOL
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn FROM devices d JOIN os_existing o ON d.id = o.device_id WHERE o.end_of_life_date IS NOT NULL AND o.end_of_life_date < CURRENT_DATE"
+    order_sensitive: false
+    source: canonical
+    notes: "7 devices."
+
+  - id: t003
+    q: list devices used in each project which have been end-of-life
+    expected_intent: list
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, d.hostname AS hostname, d.sn AS sn FROM devices d JOIN projects p ON d.project_id = p.id JOIN os_existing o ON d.id = o.device_id WHERE o.end_of_life_date IS NOT NULL AND o.end_of_life_date < CURRENT_DATE"
+    order_sensitive: false
+    source: canonical
+    notes: ""
+
+  - id: t004
+    q: how many os lifecycle records have a last-day-of-support date in the past
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM os_lifecycle WHERE ldos_date IS NOT NULL AND ldos_date < CURRENT_DATE"
+    order_sensitive: false
+    source: authored
+    notes: "53 os_lifecycle rows; subset past LDOS."
+
+  - id: t005
+    q: how many product numbers have a last-day-of-support date in the past
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM product_numbers WHERE ldos_date IS NOT NULL AND ldos_date < CURRENT_DATE"
+    order_sensitive: false
+    source: authored
+    notes: "85 product numbers; subset past LDOS."
+
+  - id: t006
+    q: list devices in each contract that end-of-maintenance has expired in april through september 2025. show contract name, end maintenance, sn, pn
+    expected_intent: list
+    golden_sql: "SELECT p.nama_kontrak AS nama_kontrak, p.end_maintenance AS end_maintenance, d.sn AS sn, d.pn AS pn FROM devices d JOIN projects p ON d.project_id = p.id WHERE strftime('%m', p.end_maintenance) IN ('04','05','06','07','08','09') AND strftime('%Y', p.end_maintenance) = '2025'"
+    order_sensitive: false
+    source: canonical
+    notes: "6 projects."
+
+  - id: t007
+    q: how many projects end in january through march
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM projects WHERE strftime('%m', end_maintenance) IN ('01','02','03')"
+    order_sensitive: false
+    source: authored
+    notes: "20 projects."
+
+  - id: t008
+    q: how many distinct functions are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM device_functions"
+    order_sensitive: false
+    source: authored
+    notes: "15 rows."
+
+  - id: t009
+    q: how many registered users are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM users"
+    order_sensitive: false
+    source: authored
+    notes: "6 users."
+
+  - id: t010
+    q: how many vendors are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM vendors"
+    order_sensitive: false
+    source: authored
+    notes: "5 vendors."
+
+# ============================================================
+# VACUOUS — empty or non-discriminating tables; structural validity only
+# ============================================================
+
+vacuous_questions:
+
+  - id: v001
+    q: how many distinct devices are flagged as impacted by any cve
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT device_id) AS count FROM cve_device_impacts WHERE is_impacted = 1"
+    order_sensitive: false
+    source: canonical
+    notes: "cve_device_impacts empty at eval time."
+
+  - id: v002
+    q: how many cve advisories are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM cve_advisories"
+    order_sensitive: false
+    source: authored
+    notes: "cve_advisories empty."
+
+  - id: v003
+    q: how many devices are impacted by each cve advisory
+    expected_intent: group_count
+    golden_sql: "SELECT c.cve_id AS cve_id, COUNT(ci.id) AS count FROM cve_advisories c JOIN cve_device_impacts ci ON c.id = ci.cve_advisory_id GROUP BY c.cve_id"
+    order_sensitive: false
+    source: authored
+    notes: "Empty."
+
+  - id: v004
+    q: list field notices
+    expected_intent: list
+    golden_sql: "SELECT f.fn_id AS fn_id FROM field_notices f"
+    order_sensitive: false
+    source: authored
+    notes: "field_notices empty."
+
+  - id: v005
+    q: how many devices are impacted by each field notice
+    expected_intent: group_count
+    golden_sql: "SELECT f.fn_id AS fn_id, COUNT(fi.id) AS count FROM field_notices f JOIN field_notice_device_impacts fi ON f.id = fi.field_notice_id GROUP BY f.fn_id"
+    order_sensitive: false
+    source: authored
+    notes: "Empty."
+
+  - id: v006
+    q: how many rma records are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM rma_records"
+    order_sensitive: false
+    source: authored
+    notes: "Empty."
+
+  - id: v007
+    q: how many rfc records are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM rfc_records"
+    order_sensitive: false
+    source: authored
+    notes: "Empty."
+
+  - id: v008
+    q: list devices with an active warranty
+    expected_intent: list
+    golden_sql: "SELECT d.hostname AS hostname, d.sn AS sn FROM devices d JOIN device_warranties w ON d.id = w.device_id WHERE w.end_warranty >= CURRENT_DATE"
+    order_sensitive: false
+    source: authored
+    notes: "All warranties expired; 0 active rows."
+
+  - id: v009
+    q: how many devices have a feature assigned
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT device_id) AS count FROM device_features"
+    order_sensitive: false
+    source: authored
+    notes: "device_features empty."
+
+  - id: v010
+    q: how many devices have recorded a change history
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT device_id) AS count FROM device_history"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: device_history populated (4150) but may not be join-addressable; verify column name."
+
+  - id: v011
+    q: how many device location mutations are recorded
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM device_location_mutations"
+    order_sensitive: false
+    source: authored
+    notes: "Empty."
+
+  - id: v012
+    q: how many action plans are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM action_plans"
+    order_sensitive: false
+    source: authored
+    notes: "10 rows — not empty but tiny."
+
+  - id: v013
+    q: how many action plans are in progress
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM action_plans WHERE LOWER(status) = 'in progress'"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: 'status' column presence/label unverified; if absent move to structural-only."
+
+  - id: v014
+    q: how many registered applications are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM applications"
+    order_sensitive: false
+    source: authored
+    notes: "1 row."
+
+  - id: v015
+    q: how many devices are associated with applications
+    expected_intent: count
+    golden_sql: "SELECT COUNT(DISTINCT device_id) AS count FROM application_devices"
+    order_sensitive: false
+    source: authored
+    notes: "16 rows."
+
+  - id: v016
+    q: how many upgrade dependency rules exist
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM upgrade_dependency_rules"
+    order_sensitive: false
+    source: authored
+    notes: "6 rows."
+
+  - id: v017
+    q: how many user change requests are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM user_change_requests"
+    order_sensitive: false
+    source: authored
+    notes: "32 rows — thin."
+
+  - id: v018
+    q: how many compatibility matrix entries are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM compatibility_matrix_entries"
+    order_sensitive: false
+    source: authored
+    notes: "3064 rows — healthy, but non-discriminating (any count query works)."
+
+  - id: v019
+    q: how many devices are in the datacenter sites
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices WHERE LOWER(site) LIKE '%datacenter%'"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: site naming convention unverified; may be 0."
+
+  - id: v020
+    q: how many devices are in branch offices
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM devices WHERE LOWER(site) LIKE '%branch%'"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: site naming convention unverified; may be 0."
+
+  - id: v021
+    q: how many sites are in the datacenter category
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM sites WHERE LOWER(name) LIKE '%datacenter%'"
+    order_sensitive: false
+    source: authored
+    notes: "# REVIEW: naming convention unverified."
+
+  - id: v022
+    q: how many users have the admin role
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM users WHERE LOWER(role) = 'admin'"
+    order_sensitive: false
+    source: authored
+    notes: "6 users total."
+
+  - id: v023
+    q: how many os versions are recommended
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM os_recommended"
+    order_sensitive: false
+    source: authored
+    notes: "3720 rows — healthy but non-discriminating."
+
+  - id: v024
+    q: how many action plan devices are there
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM action_plan_devices"
+    order_sensitive: false
+    source: authored
+    notes: "1240 rows — healthy but non-discriminating."
+
+  - id: v025
+    q: how many device sync changes are recorded
+    expected_intent: count
+    golden_sql: "SELECT COUNT(*) AS count FROM device_sync_changes"
+    order_sensitive: false
+    source: authored
+    notes: "5507 rows — healthy but non-discriminating."
+
+# ============================================================
+# CACHE PAIRS — variance of canonical questions; normalizer test
+# ============================================================
+
+cache_pairs:
+
+  - id: c001
+    pair_of: q029
+    q: list devices in each contract that end-of-maintenance has expired in april through september 2025. show contract name, end maintenance, sn, pn
+    expected_intent: list
+    expect_same_plan: false  # different year -> different plan is CORRECT
+    source: canonical
+    notes: "Year variant: 2026 -> 2025 is a legitimate different question."
+
+  - id: c002
+    pair_of: q031
+    q: list devices whose contracts have ended. show only {product family, pn, end maintenance}
+    expected_intent: list
+    expect_same_plan: true
+    source: canonical
+    notes: "Delimiter variant; must normalize to same cache key as q031."
+
+  - id: c003
+    pair_of: q031
+    q: list devices whose contracts have ended. show only {product family, pn, end maintenance, vendor name}
+    expected_intent: list
+    expect_same_plan: false
+    source: canonical
+    notes: "Extra column; different projection -> different plan."
+
+  - id: c004
+    pair_of: q001
+    q: I want to know how many devices we have
+    expected_intent: count
+    expect_same_plan: true
+    source: canonical
+    notes: "Preamble strip + have/has normalize."
+
+  - id: c005
+    pair_of: q006
+    q: how many devices belong to a vendor named vendor_alphaa
+    expected_intent: count
+    expect_same_plan: true
+    source: canonical
+    notes: "Typo repair (pass 7) must map to vendor_alpha."
+
+  - id: c006
+    pair_of: q024
+    q: list project contracts that have ended
+    expected_intent: list
+    expect_same_plan: true
+    source: authored
+    notes: "Plural normalization."
+
+  - id: c007
+    pair_of: q037
+    q: list the first five devices
+    expected_intent: list
+    expect_same_plan: true
+    source: authored
+    notes: "Word -> numeral normalize (pass 6)."
+
+  - id: c008
+    pair_of: q015
+    q: show me the top ten devices by compliance score
+    expected_intent: list
+    expect_same_plan: true
+    source: authored
+    notes: "Word -> numeral normalize."
+
+  - id: c009
+    pair_of: q002
+    q: how many devices per site
+    expected_intent: group_count
+    expect_same_plan: true
+    source: authored
+    notes: "'per' vs 'in each'."
+
+  - id: c010
+    pair_of: q008
+    q: how many projects are in the system
+    expected_intent: count
+    expect_same_plan: true
+    source: authored
+    notes: "Preamble-tolerant."
+
+  - id: c011
+    pair_of: q038
+    q: list all vendors
+    expected_intent: list
+    expect_same_plan: true
+    source: authored
+    notes: "'all' is a no-op."
+
+  - id: c012
+    pair_of: q036
+    q: how many devices belong to each ended contract
+    expected_intent: group_count
+    expect_same_plan: true
+    source: authored
+    notes: "'ended contract' = end_maintenance < CURRENT_DATE via glossary."
+
+# ============================================================
+# ABLATION SUBSET — 25 ids, one or more per repair pass
+# ============================================================
+
+ablation_subset:
+  # pass 0b temporal value misplacement
+  - t001
+  - t002
+  # pass 1 relocate columns
+  - q022
+  # pass 1b fuzzy column
+  - q014
+  # pass 2 filter names in select
+  - q039
+  # passes 2b–4 count/group_count normalization
+  - q003
+  - q004
+  # pass 5 null comparisons
+  - q010
+  # pass 6 infer limit
+  - q037
+  - q041
+  # pass 7 fuzzy values
+  - q006
+  # pass 8 inline filter injection
+  - q031
+  # pass 8b date-range normalization
+  - q026
+  # pass 9 month/year extraction
+  - q029
+  - q030
+  - t006
+  - t007
+  # pass 10 default current year
+  - q027
+  # pass 11 profile expansion
+  - q040
+  # pass 12 key-value anchor
+  - q040
+  - q041
+  # cross-pass
+  - q016
+  - q023
+  - q034
+  - q054
+  - q062
